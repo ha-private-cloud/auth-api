@@ -41,6 +41,8 @@ class Settings(BaseSettings):
 
     allowed_redirect_hosts: str = ""
 
+    registration_token: str = ""
+
     @field_validator("issuer_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:

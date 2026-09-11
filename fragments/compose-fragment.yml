@@ -1,0 +1,41 @@
+services:
+  auth-api:
+    container_name: auth-api
+    build:
+      context: ./auth-api
+      dockerfile: Dockerfile.dev
+    restart: on-failure
+    ports:
+      - "127.0.0.1:9082:8000"
+    environment:
+      AUTH_API_ENVIRONMENT: dev
+      AUTH_API_ISSUER_URL: http://localhost:9082
+      AUTH_API_DATABASE_URL: sqlite+aiosqlite:////app/dev.db
+      AUTH_API_REDIS_URL: redis://auth-api-redis:6379/0
+      AUTH_API_COOKIE_DOMAIN: localhost
+      AUTH_API_COOKIE_SECURE: "false"
+      AUTH_API_HEADLAMP_URL: http://localhost:9080
+      AUTH_API_ALLOWED_REDIRECT_HOSTS: "localhost"
+      AUTH_API_REGISTRATION_TOKEN: dev-registration-token
+      AUTH_API_BOOTSTRAP_USERNAME: admin
+      AUTH_API_BOOTSTRAP_PASSWORD: dev-password-please-change
+      AUTH_API_BOOTSTRAP_EMAIL: admin@localhost
+    volumes:
+      - ./auth-api/app:/app/app:ro
+    depends_on:
+      - auth-api-redis
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  auth-api-redis:
+    container_name: auth-api-redis
+    image: redis:7-alpine
+    restart: on-failure

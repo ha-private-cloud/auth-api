@@ -71,6 +71,7 @@ resource "kubernetes_secret" "auth_api" {
     )
     AUTH_API_PASSWORD_PEPPER        = random_password.password_pepper.result
     AUTH_API_HEADLAMP_CLIENT_SECRET = random_password.headlamp_client_secret.result
+    AUTH_API_REGISTRATION_TOKEN     = var.registration_token
     AUTH_API_BOOTSTRAP_USERNAME     = var.bootstrap_username
     AUTH_API_BOOTSTRAP_PASSWORD     = random_password.bootstrap_password.result
     AUTH_API_BOOTSTRAP_EMAIL        = var.bootstrap_email
@@ -92,7 +93,7 @@ resource "helm_release" "auth_api" {
         tag        = local.deployed_image_tag
       }
       ingress = {
-        enabled       = true
+        enabled       = var.ingress_enabled
         host          = var.issuer_hostname
         tls           = true
         tlsSecretName = var.ingress_tls_secret_name
@@ -104,7 +105,7 @@ resource "helm_release" "auth_api" {
         cookieSecure         = true
         redisNamespace       = "authapi"
         headlampUrl          = var.headlamp_url
-        allowedRedirectHosts = ""
+        allowedRedirectHosts = var.allowed_redirect_hosts
       }
       redis = {
         host     = kubernetes_service.redis.metadata[0].name

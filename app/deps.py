@@ -1,3 +1,4 @@
+import secrets
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -72,3 +73,17 @@ async def require_admin(claims: Annotated[dict, Depends(require_service_token)])
     if "cluster-admins" not in claims.get("groups", []):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="requires cluster-admins")
     return claims
+
+
+async def require_registration_token(
+    settings: SettingsDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
+    """Gates self-registration to services holding this shared secret (e.g. clusterkeep-ui's invite-code page), not end users directly."""
+    presented = (authorization or "").removeprefix("Bearer ").strip()
+    if not settings.registration_token or not secrets.compare_digest(presented, settings.registration_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid registration token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

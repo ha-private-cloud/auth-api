@@ -104,3 +104,21 @@ variable "redis_max_memory" {
   type        = string
   default     = "256mb"
 }
+
+variable "registration_token" {
+  description = "Shared bearer token that gates POST /api/v1/register. Held by clusterkeep-ui's invite-code page, not by end users."
+  type        = string
+  sensitive   = true
+}
+
+variable "ingress_enabled" {
+  description = "Whether to create a LAN Ingress for this instance. Disable for prd - it's reached only via the Cloudflare Tunnel."
+  type        = bool
+  default     = true
+}
+
+variable "allowed_redirect_hosts" {
+  description = "Comma-separated extra hosts login/register's next parameter may target, beyond cookie_domain and its subdomains."
+  type        = string
+  default     = ""
+}

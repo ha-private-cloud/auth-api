@@ -36,6 +36,21 @@ def _default_redirect(settings: SettingsDep) -> str:
     return f"{settings.issuer_url}/account"
 
 
+def _set_session_response(target: str, settings: SettingsDep, token: str) -> Response:
+    response = RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
+    response.set_cookie(
+        settings.cookie_name,
+        token,
+        max_age=settings.session_absolute_seconds,
+        domain=settings.cookie_domain,
+        secure=settings.cookie_secure,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_form(
     request: Request, settings: SettingsDep, session: OptionalSessionDep, next: str = ""
@@ -107,19 +122,7 @@ async def login_submit(
     token, _ = await redis.create_session(
         user_id=user.id, username=user.username, email=user.email, groups=user.groups
     )
-
-    response = RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
-    response.set_cookie(
-        settings.cookie_name,
-        token,
-        max_age=settings.session_absolute_seconds,
-        domain=settings.cookie_domain,
-        secure=settings.cookie_secure,
-        httponly=True,
-        samesite="lax",
-        path="/",
-    )
-    return response
+    return _set_session_response(target, settings, token)
 
 
 @router.get("/logout")

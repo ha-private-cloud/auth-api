@@ -26,6 +26,7 @@ def settings() -> Settings:
         cookie_domain=".clusterkeep.dev.net",
         cookie_secure=False,
         password_pepper="test-pepper-value-not-a-real-secret",
+        registration_token="test-registration-token",
         # Argon2 at production cost would dominate the suite's runtime.
         argon2_time_cost=1,
         argon2_memory_cost=8,
