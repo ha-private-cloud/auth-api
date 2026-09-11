@@ -1,0 +1,33 @@
+[project]
+name = "auth-api"
+version = "0.1.0"
+description = "ClusterKeep identity provider: Argon2id credentials, ML-DSA-65 service tokens, OIDC for Headlamp"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.120.0",
+    "gunicorn>=26.0.0",
+    "uvicorn[standard]>=0.38.0",
+    "sqlalchemy[asyncio]>=2.0.40",
+    "asyncpg>=0.30.0",
+    "pydantic-settings>=2.8.0",
+    "argon2-cffi>=25.1.0",
+    "pqcrypto>=1.0.0",
+    "cryptography>=46.0.0",
+    "jinja2>=3.1.6",
+    "python-multipart>=0.0.20",
+    "redis>=6.0.0",
+    "pyjwt[crypto]>=2.10.0",
+    "uvicorn-worker>=0.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=1.0.0",
+    "httpx>=0.28.0",
+    "aiosqlite>=0.21.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"

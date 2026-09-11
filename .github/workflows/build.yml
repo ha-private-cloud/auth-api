@@ -1,0 +1,17 @@
+name: build
+
+on:
+  push:
+    branches: [development, preview, main]
+  workflow_dispatch:
+
+concurrency:
+  group: tofu-auth-api
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ha-private-cloud/pipelines/.github/workflows/app-build.yml@main
+    with:
+      app: auth-api
+      namespace_override: clusterkeep-devops

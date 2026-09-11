@@ -1,0 +1,24 @@
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy to prd (check its build run first)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-auth-api
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: ha-private-cloud/pipelines/.github/workflows/app-release.yml@main
+    with:
+      app: auth-api
+      tag: ${{ inputs.tag || github.ref_name }}
+      deploy: ${{ github.event_name == 'workflow_dispatch' }}
+      namespace_override: clusterkeep-devops
