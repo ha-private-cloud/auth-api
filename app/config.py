@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,19 +39,16 @@ class Settings(BaseSettings):
     max_failed_logins: int = 10
     lockout_seconds: int = 15 * 60
 
-    allowed_redirect_hosts: list[str] = Field(default_factory=list)
+    allowed_redirect_hosts: str = ""
 
     @field_validator("issuer_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
         return v.rstrip("/")
 
-    @field_validator("allowed_redirect_hosts", mode="before")
-    @classmethod
-    def _split_hosts(cls, v: object) -> object:
-        if isinstance(v, str):
-            return [h.strip() for h in v.split(",") if h.strip()]
-        return v
+    @property
+    def allowed_redirect_hosts_list(self) -> list[str]:
+        return [h.strip() for h in self.allowed_redirect_hosts.split(",") if h.strip()]
 
 
 @lru_cache

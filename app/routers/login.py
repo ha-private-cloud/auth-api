@@ -26,7 +26,7 @@ def _is_safe_redirect(target: str, settings: SettingsDep) -> bool:
         return False
 
     host = parsed.hostname or ""
-    if host in settings.allowed_redirect_hosts:
+    if host in settings.allowed_redirect_hosts_list:
         return True
     cookie_domain = settings.cookie_domain.lstrip(".")
     return host == cookie_domain or host.endswith(f".{cookie_domain}")
