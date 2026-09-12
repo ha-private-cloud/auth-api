@@ -69,9 +69,12 @@ async def require_service_token(
         ) from exc
 
 
+ADMIN_GROUPS = ("cluster-admins", "admin")
+
+
 async def require_admin(claims: Annotated[dict, Depends(require_service_token)]) -> dict:
-    if "cluster-admins" not in claims.get("groups", []):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="requires cluster-admins")
+    if not any(g in claims.get("groups", []) for g in ADMIN_GROUPS):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="requires an admin group")
     return claims
 
 

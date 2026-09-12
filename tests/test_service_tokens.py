@@ -124,3 +124,65 @@ async def test_user_listing_never_exposes_password_hashes(client, admin_user, ap
     body = (await client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})).text
     assert "argon2" not in body
     assert "password_hash" not in body
+
+
+async def test_admin_group_alone_also_grants_admin_access(client, admin_user, app):
+    """admin-ui's own admins carry "admin", not "cluster-admins"."""
+    token = app.state.tokens.service_token(
+        subject=admin_user.id, username="alice", audience="auth-api", scopes=[], groups=["admin"]
+    )
+    response = await client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+
+
+async def test_admin_can_update_a_users_groups(client, admin_user, app):
+    async with app.state.sessionmaker() as session:
+        from app import repository
+
+        bob = await repository.create_user(
+            session, app.state.passwords, username="bob", password="bobs-long-password"
+        )
+        bob_id = bob.id
+
+    token = app.state.tokens.service_token(
+        subject=admin_user.id,
+        username="alice",
+        audience="auth-api",
+        scopes=[],
+        groups=["cluster-admins"],
+    )
+    response = await client.patch(
+        f"/api/v1/users/{bob_id}/groups",
+        json={"groups": ["admin"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["groups"] == ["admin"]
+
+
+async def test_updating_groups_for_an_unknown_user_returns_404(client, admin_user, app):
+    token = app.state.tokens.service_token(
+        subject=admin_user.id,
+        username="alice",
+        audience="auth-api",
+        scopes=[],
+        groups=["cluster-admins"],
+    )
+    response = await client.patch(
+        "/api/v1/users/does-not-exist/groups",
+        json={"groups": ["admin"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+
+
+async def test_non_admin_cannot_update_groups(client, admin_user, app):
+    token = app.state.tokens.service_token(
+        subject="bob-id", username="bob", audience="auth-api", scopes=[], groups=["viewers"]
+    )
+    response = await client.patch(
+        f"/api/v1/users/{admin_user.id}/groups",
+        json={"groups": ["admin"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403

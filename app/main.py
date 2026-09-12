@@ -46,7 +46,7 @@ async def bootstrap(app: FastAPI, settings: Settings) -> None:
                     username=admin_user,
                     password=admin_password,
                     email=os.environ.get("AUTH_API_BOOTSTRAP_EMAIL") or None,
-                    groups=["cluster-admins"],
+                    groups=["cluster-admins", "admin"],
                     must_change_password=True,
                 )
                 logger.info("bootstrapped admin user %s", admin_user)

@@ -32,6 +32,10 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=12, max_length=1024)
 
 
+class GroupsUpdate(BaseModel):
+    groups: list[str]
+
+
 def _to_out(user) -> UserOut:
     return UserOut(
         id=user.id,
@@ -66,6 +70,20 @@ async def create(
         groups=body.groups,
         must_change_password=body.must_change_password,
     )
+    return _to_out(user)
+
+
+@router.patch("/{user_id}/groups", response_model=UserOut)
+async def update_groups(
+    db: DbDep,
+    user_id: str,
+    body: GroupsUpdate,
+    _: Annotated[dict, Depends(require_admin)],
+) -> UserOut:
+    user = await repository.get_user_by_id(db, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such user")
+    await repository.set_groups(db, user, body.groups)
     return _to_out(user)
 
 
