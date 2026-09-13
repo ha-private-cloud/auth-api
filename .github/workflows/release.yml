@@ -21,4 +21,4 @@ jobs:
       app: auth-api
       tag: ${{ inputs.tag || github.ref_name }}
       deploy: ${{ github.event_name == 'workflow_dispatch' }}
-      namespace_override: clusterkeep-devops
+      namespace_override: auth-prd-pub
