@@ -45,11 +45,6 @@ resource "random_password" "password_pepper" {
   special = false
 }
 
-resource "random_password" "headlamp_client_secret" {
-  length  = 48
-  special = false
-}
-
 resource "random_password" "bootstrap_password" {
   length  = 24
   special = false
@@ -69,12 +64,11 @@ resource "kubernetes_secret" "auth_api" {
       kubernetes_service.postgres.metadata[0].name,
       data.kubernetes_namespace.auth_api.metadata[0].name,
     )
-    AUTH_API_PASSWORD_PEPPER        = random_password.password_pepper.result
-    AUTH_API_HEADLAMP_CLIENT_SECRET = random_password.headlamp_client_secret.result
-    AUTH_API_REGISTRATION_TOKEN     = var.registration_token
-    AUTH_API_BOOTSTRAP_USERNAME     = var.bootstrap_username
-    AUTH_API_BOOTSTRAP_PASSWORD     = random_password.bootstrap_password.result
-    AUTH_API_BOOTSTRAP_EMAIL        = var.bootstrap_email
+    AUTH_API_PASSWORD_PEPPER    = random_password.password_pepper.result
+    AUTH_API_REGISTRATION_TOKEN = var.registration_token
+    AUTH_API_BOOTSTRAP_USERNAME = var.bootstrap_username
+    AUTH_API_BOOTSTRAP_PASSWORD = random_password.bootstrap_password.result
+    AUTH_API_BOOTSTRAP_EMAIL    = var.bootstrap_email
   }
 }
 
@@ -106,13 +100,15 @@ resource "helm_release" "auth_api" {
         redisNamespace       = "authapi"
         headlampUrl          = var.headlamp_url
         allowedRedirectHosts = var.allowed_redirect_hosts
+        defaultRedirectUrl   = var.default_redirect_url
       }
       redis = {
         host     = kubernetes_service.redis.metadata[0].name
         port     = 6379
         database = 0
       }
-      existingSecret = kubernetes_secret.auth_api.metadata[0].name
+      existingSecret        = kubernetes_secret.auth_api.metadata[0].name
+      clusterIdentitySecret = var.cluster_identity_secret_name
       imagePullSecrets = var.image_pull_secret_name != "" ? [
         { name = var.image_pull_secret_name }
       ] : []

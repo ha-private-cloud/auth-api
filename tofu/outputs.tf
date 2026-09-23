@@ -13,22 +13,6 @@ output "pq_jwks_url" {
   value       = "${local.issuer_url}/pq/jwks.json"
 }
 
-output "headlamp_oidc_client_id" {
-  description = "Client ID auth-api registers for Headlamp on startup."
-  value       = "headlamp"
-}
-
-output "headlamp_oidc_client_secret" {
-  description = "Client secret for Headlamp's OIDC config in cluster-config, replacing the Authentik one."
-  value       = random_password.headlamp_client_secret.result
-  sensitive   = true
-}
-
-output "headlamp_oidc_issuer_url" {
-  description = "Drop-in replacement for cluster-auth's output of the same name."
-  value       = local.issuer_url
-}
-
 output "bootstrap_username" {
   description = "Admin account created on first start."
   value       = var.bootstrap_username

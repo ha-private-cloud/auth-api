@@ -46,11 +46,21 @@ async def create_user(
     return user
 
 
+async def set_groups(session: AsyncSession, user: User, groups: list[str]) -> None:
+    user.groups = groups
+    await session.commit()
+
+
 async def set_password(
     session: AsyncSession, passwords: PasswordService, user: User, password: str
 ) -> None:
     user.password_hash = passwords.hash(password)
     user.must_change_password = False
+    await session.commit()
+
+
+async def require_password_change(session: AsyncSession, user: User) -> None:
+    user.must_change_password = True
     await session.commit()
 
 

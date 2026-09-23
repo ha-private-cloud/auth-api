@@ -10,7 +10,7 @@ services:
     environment:
       AUTH_API_ENVIRONMENT: dev
       AUTH_API_ISSUER_URL: http://localhost:9082
-      AUTH_API_DATABASE_URL: sqlite+aiosqlite:////app/dev.db
+      AUTH_API_DATABASE_URL: sqlite+aiosqlite:////data/dev.db
       AUTH_API_REDIS_URL: redis://auth-api-redis:6379/0
       AUTH_API_COOKIE_DOMAIN: localhost
       AUTH_API_COOKIE_SECURE: "false"
@@ -22,6 +22,7 @@ services:
       AUTH_API_BOOTSTRAP_EMAIL: admin@localhost
     volumes:
       - ./auth-api/app:/app/app:ro
+      - auth-api-dev-db:/data
     depends_on:
       - auth-api-redis
     healthcheck:
@@ -39,3 +40,6 @@ services:
     container_name: auth-api-redis
     image: redis:7-alpine
     restart: on-failure
+
+volumes:
+  auth-api-dev-db:

@@ -69,9 +69,14 @@ async def require_service_token(
         ) from exc
 
 
+ADMIN_GROUPS = ("cluster-admins", "admin")
+CLUSTER_ADMIN_GROUP = "cluster-admins"
+CLUSTER_GROUP_PREFIX = "cluster-"
+
+
 async def require_admin(claims: Annotated[dict, Depends(require_service_token)]) -> dict:
-    if "cluster-admins" not in claims.get("groups", []):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="requires cluster-admins")
+    if not any(g in claims.get("groups", []) for g in ADMIN_GROUPS):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="requires an admin group")
     return claims
 
 
@@ -87,3 +92,10 @@ async def require_registration_token(
             detail="invalid registration token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+def require_cluster_group_rights(claims: dict, before: list[str], after: list[str]) -> None:
+    """cluster-* groups map to Kubernetes ClusterRoles, so only cluster admins may change them."""
+    changed = {g for g in set(before) ^ set(after) if g.startswith(CLUSTER_GROUP_PREFIX)}
+    if changed and CLUSTER_ADMIN_GROUP not in claims.get("groups", []):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only cluster-admins may change cluster-* groups")
