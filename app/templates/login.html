@@ -66,10 +66,27 @@
 <body>
 <main class="card">
   <h1>ClusterKeep</h1>
+  {% if change_token %}
+  <p class="sub">Choose a new password to continue.</p>
+  {% else %}
   <p class="sub">Sign in to continue.</p>
+  {% endif %}
 
   {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
 
+  {% if change_token %}
+  <form method="post" action="/login/change-password" autocomplete="off">
+    <input type="hidden" name="change_token" value="{{ change_token }}">
+
+    <label for="password">New password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required autofocus>
+
+    <label for="password_repeat">Repeat new password</label>
+    <input id="password_repeat" name="password_repeat" type="password" autocomplete="new-password" minlength="12" required>
+
+    <button type="submit">Set password</button>
+  </form>
+  {% else %}
   <form method="post" action="/login" autocomplete="on">
     <input type="hidden" name="next" value="{{ next }}">
 
@@ -81,6 +98,7 @@
 
     <button type="submit">Sign in</button>
   </form>
+  {% endif %}
 
   <span class="env">{{ environment }}</span>
 </main>

@@ -33,7 +33,31 @@ def _is_safe_redirect(target: str, settings: SettingsDep) -> bool:
 
 
 def _default_redirect(settings: SettingsDep) -> str:
-    return f"{settings.issuer_url}/account"
+    return settings.default_redirect_url or f"{settings.issuer_url}/account"
+
+
+MIN_PASSWORD_LENGTH = 12
+
+
+def _change_password_page(
+    request: Request, settings: SettingsDep, change_token: str, error: str | None, status_code: int = 200
+) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {"environment": settings.environment, "error": error, "change_token": change_token},
+        status_code=status_code,
+    )
+
+
+async def _start_session(redis: RedisDep, db: DbDep, user, target: str, settings: SettingsDep) -> Response:
+    user.last_login_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    token, _ = await redis.create_session(
+        user_id=user.id, username=user.username, email=user.email, groups=user.groups
+    )
+    return _set_session_response(target, settings, token)
 
 
 def _set_session_response(target: str, settings: SettingsDep, token: str) -> Response:
@@ -116,13 +140,46 @@ async def login_submit(
         await repository.set_password(db, passwords, user, password)
 
     await redis.clear_failed_logins(username)
-    user.last_login_at = datetime.now(timezone.utc)
-    await db.commit()
 
-    token, _ = await redis.create_session(
-        user_id=user.id, username=user.username, email=user.email, groups=user.groups
-    )
-    return _set_session_response(target, settings, token)
+    if user.must_change_password:
+        change_token = await redis.store_password_change(user_id=user.id, next_url=target)
+        return _change_password_page(request, settings, change_token, None)
+
+    return await _start_session(redis, db, user, target, settings)
+
+
+@router.post("/login/change-password")
+async def change_password_submit(
+    request: Request,
+    settings: SettingsDep,
+    db: DbDep,
+    redis: RedisDep,
+    passwords: PasswordsDep,
+    change_token: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    password_repeat: Annotated[str, Form()],
+) -> Response:
+    pending = await redis.get_password_change(change_token)
+    user = None if pending is None else await repository.get_user_by_id(db, pending["user_id"])
+    if user is None or not user.is_active:
+        return RedirectResponse(f"{settings.issuer_url}/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    def retry(error: str) -> Response:
+        return _change_password_page(request, settings, change_token, error, status.HTTP_400_BAD_REQUEST)
+
+    if password != password_repeat:
+        return retry("Passwords do not match.")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return retry(f"Use at least {MIN_PASSWORD_LENGTH} characters.")
+    if await run_in_threadpool(passwords.verify, user.password_hash, password):
+        return retry("Choose a password different from your current one.")
+
+    await repository.set_password(db, passwords, user, password)
+    await redis.delete_password_change(change_token)
+    await redis.delete_user_sessions(user.id)
+
+    target = pending["next"] if _is_safe_redirect(pending["next"], settings) else _default_redirect(settings)
+    return await _start_session(redis, db, user, target, settings)
 
 
 @router.get("/logout")

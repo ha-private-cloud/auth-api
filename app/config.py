@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     session_absolute_seconds: int = 60 * 60 * 24 * 7
 
     authorization_code_seconds: int = 60
+    password_change_seconds: int = 60 * 10
     access_token_seconds: int = 60 * 60
     id_token_seconds: int = 60 * 60
     refresh_token_seconds: int = 60 * 60 * 24 * 30
@@ -40,6 +41,7 @@ class Settings(BaseSettings):
     lockout_seconds: int = 15 * 60
 
     allowed_redirect_hosts: str = ""
+    default_redirect_url: str = ""
 
     registration_token: str = ""
 

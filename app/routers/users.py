@@ -5,7 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from app import repository
-from app.deps import DbDep, PasswordsDep, RedisDep, require_admin
+from app.deps import DbDep, PasswordsDep, RedisDep, require_admin, require_cluster_group_rights
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -57,8 +57,9 @@ async def create(
     db: DbDep,
     passwords: PasswordsDep,
     body: UserCreate,
-    _: Annotated[dict, Depends(require_admin)],
+    claims: Annotated[dict, Depends(require_admin)],
 ) -> UserOut:
+    require_cluster_group_rights(claims, [], body.groups)
     if await repository.get_user_by_username(db, body.username) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "username already exists")
     user = await repository.create_user(
@@ -78,11 +79,12 @@ async def update_groups(
     db: DbDep,
     user_id: str,
     body: GroupsUpdate,
-    _: Annotated[dict, Depends(require_admin)],
+    claims: Annotated[dict, Depends(require_admin)],
 ) -> UserOut:
     user = await repository.get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such user")
+    require_cluster_group_rights(claims, user.groups, body.groups)
     await repository.set_groups(db, user, body.groups)
     return _to_out(user)
 

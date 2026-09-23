@@ -59,6 +59,11 @@ async def set_password(
     await session.commit()
 
 
+async def require_password_change(session: AsyncSession, user: User) -> None:
+    user.must_change_password = True
+    await session.commit()
+
+
 async def get_client(session: AsyncSession, client_id: str) -> OidcClient | None:
     result = await session.execute(select(OidcClient).where(OidcClient.client_id == client_id))
     return result.scalar_one_or_none()

@@ -46,9 +46,21 @@ variable "cookie_domain" {
 }
 
 variable "headlamp_url" {
-  description = "Headlamp's base URL. auth-api registers <this>/oidc-callback as the Headlamp OIDC client's only redirect URI."
+  description = "Headlamp's base URL. auth-api registers <this>/oidc-callback as the Headlamp OIDC client's only redirect URI, once cluster-auth supplies the client secret."
   type        = string
   default     = "https://headlamp.clusterkeep.dev.net"
+}
+
+variable "cluster_identity_secret_name" {
+  description = "Secret written by cluster-auth holding the Headlamp client secret. Set only on the instance the apiserver trusts (prd); blank elsewhere."
+  type        = string
+  default     = ""
+}
+
+variable "default_redirect_url" {
+  description = "Where a login without a next= target lands."
+  type        = string
+  default     = "https://storage-dev.clusterkeep.dev.net"
 }
 
 variable "environment" {
