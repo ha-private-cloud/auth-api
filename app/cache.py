@@ -126,6 +126,24 @@ class RedisStore:
         raw = await self._client.getdel(self._key("code", code))
         return None if raw is None else json.loads(raw)
 
+    async def store_password_change(self, *, user_id: str, next_url: str) -> str:
+        token = new_opaque_token()
+        await self._client.set(
+            self._key("password-change", token),
+            json.dumps({"user_id": user_id, "next": next_url}),
+            ex=self._settings.password_change_seconds,
+        )
+        return token
+
+    async def get_password_change(self, token: str) -> dict[str, Any] | None:
+        if not token:
+            return None
+        raw = await self._client.get(self._key("password-change", token))
+        return None if raw is None else json.loads(raw)
+
+    async def delete_password_change(self, token: str) -> None:
+        await self._client.delete(self._key("password-change", token))
+
     async def store_refresh_token(self, payload: dict[str, Any]) -> str:
         token = new_opaque_token()
         await self._client.set(
