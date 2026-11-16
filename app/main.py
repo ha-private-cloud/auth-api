@@ -2,7 +2,9 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import repository
 from app.cache import RedisStore, build_client
@@ -88,6 +90,15 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.environment != "prd" else None,
         redoc_url=None,
     )
+
+    @application.exception_handler(StarletteHTTPException)
+    async def not_found_page(request: Request, exc: StarletteHTTPException):
+        wants_html = "text/html" in request.headers.get("accept", "")
+        if exc.status_code == 404 and wants_html and not request.url.path.startswith("/api/"):
+            return login.templates.TemplateResponse(
+                request, "not_found.html", {"home_url": login._default_redirect(settings)}, status_code=404
+            )
+        return await http_exception_handler(request, exc)
 
     application.include_router(health.router)
     application.include_router(login.router)
