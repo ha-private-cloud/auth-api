@@ -50,6 +50,11 @@ resource "random_password" "bootstrap_password" {
   special = false
 }
 
+resource "random_password" "cloudflare_access_client_secret" {
+  length  = 48
+  special = false
+}
+
 # Kept out of helm_release.values - that attribute isn't sensitive and renders in full in plan output.
 resource "kubernetes_secret" "auth_api" {
   metadata {
@@ -69,6 +74,9 @@ resource "kubernetes_secret" "auth_api" {
     AUTH_API_BOOTSTRAP_USERNAME = var.bootstrap_username
     AUTH_API_BOOTSTRAP_PASSWORD = random_password.bootstrap_password.result
     AUTH_API_BOOTSTRAP_EMAIL    = var.bootstrap_email
+
+    AUTH_API_CLOUDFLARE_ACCESS_TEAM_DOMAIN   = var.cloudflare_access_team_domain
+    AUTH_API_CLOUDFLARE_ACCESS_CLIENT_SECRET = var.cloudflare_access_team_domain != "" ? random_password.cloudflare_access_client_secret.result : ""
   }
 }
 

@@ -23,3 +23,14 @@ output "bootstrap_password" {
   value       = random_password.bootstrap_password.result
   sensitive   = true
 }
+
+output "cloudflare_access_client_id" {
+  description = "Client ID to enter as the App ID on the Cloudflare Access OpenID Connect identity provider."
+  value       = var.cloudflare_access_team_domain != "" ? "cloudflare-access" : ""
+}
+
+output "cloudflare_access_client_secret" {
+  description = "Client secret for the Cloudflare Access OpenID Connect identity provider."
+  value       = var.cloudflare_access_team_domain != "" ? random_password.cloudflare_access_client_secret.result : ""
+  sensitive   = true
+}
