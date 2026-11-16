@@ -17,6 +17,7 @@ services:
       AUTH_API_HEADLAMP_URL: http://localhost:9080
       AUTH_API_ALLOWED_REDIRECT_HOSTS: "localhost"
       AUTH_API_REGISTRATION_TOKEN: dev-registration-token
+      AUTH_API_LOGIN_PAGE_URL: http://localhost:9080/login
       AUTH_API_BOOTSTRAP_USERNAME: admin
       AUTH_API_BOOTSTRAP_PASSWORD: dev-password-please-change
       AUTH_API_BOOTSTRAP_EMAIL: admin@localhost

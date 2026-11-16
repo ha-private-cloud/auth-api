@@ -101,6 +101,7 @@ resource "helm_release" "auth_api" {
         headlampUrl          = var.headlamp_url
         allowedRedirectHosts = var.allowed_redirect_hosts
         defaultRedirectUrl   = var.default_redirect_url
+        loginPageUrl         = var.login_page_url
       }
       redis = {
         host     = kubernetes_service.redis.metadata[0].name

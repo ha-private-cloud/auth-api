@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     allowed_redirect_hosts: str = ""
     default_redirect_url: str = ""
+    login_page_url: str = "https://dev.clusterkeep.dev.net/login"
 
     registration_token: str = ""
 

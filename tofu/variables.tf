@@ -63,6 +63,12 @@ variable "default_redirect_url" {
   default     = "https://storage-dev.clusterkeep.dev.net"
 }
 
+variable "login_page_url" {
+  description = "clusterkeep-ui sign-in page that /login and /authorize send browsers to."
+  type        = string
+  default     = "https://dev.clusterkeep.dev.net/login"
+}
+
 variable "environment" {
   description = "Environment name, surfaced on the login page and used to disable /docs in prd."
   type        = string

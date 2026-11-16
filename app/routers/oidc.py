@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from app import repository
 from app.cache import digest
 from app.deps import DbDep, OptionalSessionDep, PasswordsDep, RedisDep, SettingsDep, TokensDep, require_service_token
+from app.routers.login import login_page_redirect
 
 router = APIRouter(tags=["oidc"])
 
@@ -95,10 +96,7 @@ async def authorize(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "code_challenge is required for this client")
 
     if session is None or prompt == "login":
-        login_url = f"{settings.issuer_url}/login?" + urlencode(
-            {"next": str(request.url)}
-        )
-        return RedirectResponse(login_url, status_code=status.HTTP_303_SEE_OTHER)
+        return login_page_redirect(settings, str(request.url))
 
     code = await redis.store_authorization_code(
         {
