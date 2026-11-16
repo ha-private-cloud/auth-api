@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Page not found &middot; ClusterKeep</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f4;
+    --card: #ffffff;
+    --fg: #1c1917;
+    --muted: #78716c;
+    --border: #d6d3d1;
+    --accent: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1917;
+      --card: #292524;
+      --fg: #f5f5f4;
+      --muted: #a8a29e;
+      --border: #44403c;
+      --accent: #d97706;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--fg); padding: 1.5rem;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .card {
+    width: 100%; max-width: 24rem; background: var(--card); border: 1px solid var(--border);
+    border-radius: 0.75rem; padding: 2rem; box-shadow: 0 1px 3px rgb(0 0 0 / 0.1); text-align: center;
+  }
+  .code { margin: 0 0 0.5rem; font-size: 2.25rem; font-weight: 700; color: var(--accent); }
+  h1 { margin: 0 0 0.25rem; font-size: 1.5rem; letter-spacing: -0.02em; }
+  .sub { margin: 0 0 1.5rem; color: var(--muted); font-size: 0.875rem; }
+  a { color: var(--accent); font-size: 0.875rem; font-weight: 600; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 0.25rem; }
+</style>
+</head>
+<body>
+<main class="card">
+  <p class="code">404</p>
+  <h1>Page not found</h1>
+  <p class="sub">The page you're looking for doesn't exist.</p>
+  <a href="{{ home_url }}">Back to ClusterKeep</a>
+</main>
+</body>
+</html>
