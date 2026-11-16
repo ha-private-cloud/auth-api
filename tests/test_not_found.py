@@ -8,7 +8,7 @@ async def test_browser_gets_the_not_found_page_for_an_unknown_path(client):
 
 async def test_not_found_page_links_to_the_default_redirect(client, settings):
     response = await client.get("/does-not-exist", headers={"Accept": "text/html"})
-    assert f'href="{settings.issuer_url}/account"' in response.text
+    assert 'href="https://ck-test.clusterkeep.dev.net/"' in response.text
 
 
 async def test_api_clients_still_get_json_for_an_unknown_path(client):

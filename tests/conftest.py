@@ -11,10 +11,17 @@ from app.security.tokens import TokenService
 from tests.fakeredis import FakeRedis
 
 ADMIN_PASSWORD = "correct-horse-battery-staple"
+FRONTEND_TOKEN = "test-registration-token"
+FRONTEND_HEADERS = {"Authorization": f"Bearer {FRONTEND_TOKEN}"}
 
 
 async def login(client):
-    await client.post("/login", data={"username": "alice", "password": ADMIN_PASSWORD})
+    response = await client.post(
+        "/api/v1/sessions",
+        json={"username": "alice", "password": ADMIN_PASSWORD},
+        headers=FRONTEND_HEADERS,
+    )
+    client.cookies.set("ck_sso", response.json()["session_token"])
 
 
 @pytest.fixture
@@ -26,7 +33,8 @@ def settings() -> Settings:
         cookie_domain=".clusterkeep.dev.net",
         cookie_secure=False,
         password_pepper="test-pepper-value-not-a-real-secret",
-        registration_token="test-registration-token",
+        registration_token=FRONTEND_TOKEN,
+        login_page_url="https://ck-test.clusterkeep.dev.net/login",
         # Argon2 at production cost would dominate the suite's runtime.
         argon2_time_cost=1,
         argon2_memory_cost=8,

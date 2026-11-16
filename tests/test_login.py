@@ -1,102 +1,103 @@
-import re
-
 import pytest
 
 from app import repository
-from tests.conftest import ADMIN_PASSWORD
+from tests.conftest import ADMIN_PASSWORD, FRONTEND_HEADERS
+
+SESSIONS = "/api/v1/sessions"
 
 
-async def test_login_page_renders(client):
-    response = await client.get("/login")
-    assert response.status_code == 200
-    assert 'name="password"' in response.text
-
-
-async def test_successful_login_sets_an_opaque_session_cookie(client, admin_user, settings):
-    response = await client.post(
-        "/login",
-        data={"username": "alice", "password": ADMIN_PASSWORD, "next": "https://headlamp.clusterkeep.dev.net"},
-        follow_redirects=False,
+async def sign_in(client, password=ADMIN_PASSWORD, username="alice", next_url=""):
+    return await client.post(
+        SESSIONS,
+        json={"username": username, "password": password, "next": next_url},
+        headers=FRONTEND_HEADERS,
     )
-    assert response.status_code == 303
-    assert response.headers["location"] == "https://headlamp.clusterkeep.dev.net"
 
-    cookie = response.cookies[settings.cookie_name]
-    # The cookie is a random handle: no username, no claims, nothing signed.
-    assert "alice" not in cookie
-    assert len(cookie) >= 40
+
+async def test_sessions_api_requires_the_frontend_token(client, admin_user):
+    response = await client.post(SESSIONS, json={"username": "alice", "password": ADMIN_PASSWORD})
+    assert response.status_code == 401
+
+
+async def test_successful_sign_in_returns_an_opaque_session_and_cookie_settings(client, admin_user, settings):
+    response = await sign_in(client, next_url="https://headlamp.clusterkeep.dev.net")
+    assert response.status_code == 201
+    body = response.json()
+    assert body["redirect_to"] == "https://headlamp.clusterkeep.dev.net"
+    assert body["cookie"] == {
+        "name": settings.cookie_name,
+        "domain": settings.cookie_domain,
+        "max_age": settings.session_absolute_seconds,
+        "secure": settings.cookie_secure,
+    }
+    # The token is a random handle: no username, no claims, nothing signed.
+    assert "alice" not in body["session_token"]
+    assert len(body["session_token"]) >= 40
+    assert settings.cookie_name not in response.cookies
 
 
 async def test_wrong_password_is_rejected(client, admin_user):
-    response = await client.post(
-        "/login", data={"username": "alice", "password": "not-the-password"}, follow_redirects=False
-    )
+    response = await sign_in(client, password="not-the-password")
     assert response.status_code == 401
-    assert "Incorrect username or password" in response.text
+    assert "session_token" not in response.json()
 
 
-async def test_unknown_user_gives_the_same_message_as_a_wrong_password(client, admin_user):
-    """No username enumeration through the login form."""
-    unknown = await client.post(
-        "/login", data={"username": "nobody", "password": "whatever-value"}, follow_redirects=False
-    )
-    wrong = await client.post(
-        "/login", data={"username": "alice", "password": "not-the-password"}, follow_redirects=False
-    )
+async def test_unknown_user_gives_the_same_answer_as_a_wrong_password(client, admin_user):
+    unknown = await sign_in(client, username="nobody", password="whatever-value")
+    wrong = await sign_in(client, password="not-the-password")
     assert unknown.status_code == wrong.status_code == 401
-    assert "Incorrect username or password" in unknown.text
+    assert unknown.json() == wrong.json()
 
 
 async def test_repeated_failures_lock_the_account_out(client, admin_user, settings):
     for _ in range(settings.max_failed_logins):
-        await client.post("/login", data={"username": "alice", "password": "wrong-password"})
-
-    response = await client.post(
-        "/login", data={"username": "alice", "password": ADMIN_PASSWORD}, follow_redirects=False
-    )
-    assert response.status_code == 429
+        await sign_in(client, password="wrong-password")
+    assert (await sign_in(client)).status_code == 429
 
 
-async def test_successful_login_clears_the_failure_counter(client, admin_user, app):
-    await client.post("/login", data={"username": "alice", "password": "wrong-password"})
+async def test_successful_sign_in_clears_the_failure_counter(client, admin_user, app):
+    await sign_in(client, password="wrong-password")
     assert await app.state.redis.failed_login_count("alice") == 1
-
-    await client.post("/login", data={"username": "alice", "password": ADMIN_PASSWORD})
+    await sign_in(client)
     assert await app.state.redis.failed_login_count("alice") == 0
 
 
 async def test_offsite_next_is_refused(client, admin_user, settings):
-    """Open-redirect guard: a fresh session must not be steered off-domain."""
-    response = await client.post(
-        "/login",
-        data={"username": "alice", "password": ADMIN_PASSWORD, "next": "https://evil.example.com/steal"},
-        follow_redirects=False,
-    )
-    assert response.headers["location"] == f"{settings.issuer_url}/account"
+    response = await sign_in(client, next_url="https://evil.example.com/steal")
+    assert response.json()["redirect_to"] == "https://ck-test.clusterkeep.dev.net/"
 
 
-async def test_session_endpoint_reflects_the_logged_in_user(client, admin_user):
-    await client.post("/login", data={"username": "alice", "password": ADMIN_PASSWORD})
+async def test_sign_in_without_next_lands_on_the_default_redirect(client, admin_user, settings):
+    settings.default_redirect_url = "https://storage.clusterkeep.dev.net"
+    assert (await sign_in(client)).json()["redirect_to"] == "https://storage.clusterkeep.dev.net"
+
+
+async def test_issued_session_is_accepted_by_the_session_endpoint(client, admin_user, settings):
+    client.cookies.set(settings.cookie_name, (await sign_in(client)).json()["session_token"])
     response = await client.get("/session")
     assert response.status_code == 200
     assert response.json()["preferred_username"] == "alice"
     assert response.json()["groups"] == ["cluster-admins"]
 
 
-async def test_logout_revokes_the_session_immediately(client, admin_user):
-    await client.post("/login", data={"username": "alice", "password": ADMIN_PASSWORD})
-    assert (await client.get("/session")).status_code == 200
-
-    await client.get("/logout", follow_redirects=False)
+async def test_revoking_ends_the_session_immediately(client, admin_user, settings):
+    token = (await sign_in(client)).json()["session_token"]
+    revoked = await client.post(f"{SESSIONS}/revoke", json={"session_token": token}, headers=FRONTEND_HEADERS)
+    assert revoked.status_code == 200
+    assert revoked.json()["cookie"]["name"] == settings.cookie_name
+    client.cookies.set(settings.cookie_name, token)
     assert (await client.get("/session")).status_code == 401
 
 
-async def test_a_password_change_revokes_every_existing_session(client, admin_user, app):
-    """Redis being shared is what makes this fleet-wide and instant."""
-    await client.post("/login", data={"username": "alice", "password": ADMIN_PASSWORD})
-    assert (await client.get("/session")).status_code == 200
+async def test_revoking_requires_the_frontend_token(client, admin_user):
+    token = (await sign_in(client)).json()["session_token"]
+    assert (await client.post(f"{SESSIONS}/revoke", json={"session_token": token})).status_code == 401
 
+
+async def test_a_password_change_revokes_every_existing_session(client, admin_user, app, settings):
+    token = (await sign_in(client)).json()["session_token"]
     await app.state.redis.delete_user_sessions(admin_user.id)
+    client.cookies.set(settings.cookie_name, token)
     assert (await client.get("/session")).status_code == 401
 
 
@@ -106,80 +107,80 @@ async def _flag_for_change(app, user):
         await repository.require_password_change(session, fresh)
 
 
-def _change_token(response) -> str:
-    match = re.search(r'name="change_token" value="([^"]+)"', response.text)
-    assert match, response.text
-    return match.group(1)
-
-
-async def test_flagged_account_gets_no_session_until_the_password_changes(client, app, admin_user, settings):
+async def test_flagged_account_gets_a_change_token_instead_of_a_session(client, app, admin_user):
     await _flag_for_change(app, admin_user)
+    response = await sign_in(client)
+    assert response.status_code == 409
+    assert response.json()["change_token"]
+    assert "session_token" not in response.json()
+
+
+async def test_changing_the_password_signs_in_and_clears_the_flag(client, app, admin_user):
+    await _flag_for_change(app, admin_user)
+    token = (await sign_in(client, next_url="https://storage.clusterkeep.dev.net")).json()["change_token"]
 
     response = await client.post(
-        "/login", data={"username": "alice", "password": ADMIN_PASSWORD}, follow_redirects=False
+        f"{SESSIONS}/password-change",
+        json={"change_token": token, "password": "a-brand-new-passphrase"},
+        headers=FRONTEND_HEADERS,
     )
-    assert response.status_code == 200
-    assert 'action="/login/change-password"' in response.text
-    assert settings.cookie_name not in response.cookies
-
-
-async def test_changing_the_password_signs_in_and_clears_the_flag(client, app, admin_user, settings):
-    await _flag_for_change(app, admin_user)
-    first = await client.post(
-        "/login",
-        data={"username": "alice", "password": ADMIN_PASSWORD, "next": "https://storage.clusterkeep.dev.net"},
-        follow_redirects=False,
-    )
-    token = _change_token(first)
-
-    response = await client.post(
-        "/login/change-password",
-        data={"change_token": token, "password": "a-brand-new-passphrase", "password_repeat": "a-brand-new-passphrase"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
-    assert response.headers["location"] == "https://storage.clusterkeep.dev.net"
-    assert settings.cookie_name in response.cookies
+    assert response.status_code == 201
+    assert response.json()["redirect_to"] == "https://storage.clusterkeep.dev.net"
+    assert response.json()["session_token"]
 
     async with app.state.sessionmaker() as session:
         user = await repository.get_user_by_username(session, "alice")
     assert user.must_change_password is False
 
     replay = await client.post(
-        "/login/change-password",
-        data={"change_token": token, "password": "another-new-passphrase", "password_repeat": "another-new-passphrase"},
-        follow_redirects=False,
+        f"{SESSIONS}/password-change",
+        json={"change_token": token, "password": "another-new-passphrase"},
+        headers=FRONTEND_HEADERS,
     )
-    assert replay.status_code == 303
-    assert replay.headers["location"].endswith("/login")
+    assert replay.status_code == 410
 
 
 @pytest.mark.parametrize(
-    ("password", "repeat", "message"),
-    [
-        ("a-brand-new-passphrase", "a-different-passphrase", "Passwords do not match."),
-        ("short", "short", "Use at least 12 characters."),
-        (ADMIN_PASSWORD, ADMIN_PASSWORD, "different from your current one"),
-    ],
+    ("password", "code"),
+    [("short", "too_short"), (ADMIN_PASSWORD, "unchanged")],
 )
-async def test_bad_new_passwords_are_refused(client, app, admin_user, password, repeat, message):
+async def test_bad_new_passwords_are_refused(client, app, admin_user, password, code):
     await _flag_for_change(app, admin_user)
-    first = await client.post("/login", data={"username": "alice", "password": ADMIN_PASSWORD})
-    token = _change_token(first)
-
+    token = (await sign_in(client)).json()["change_token"]
     response = await client.post(
-        "/login/change-password",
-        data={"change_token": token, "password": password, "password_repeat": repeat},
-        follow_redirects=False,
+        f"{SESSIONS}/password-change",
+        json={"change_token": token, "password": password},
+        headers=FRONTEND_HEADERS,
     )
     assert response.status_code == 400
-    assert message in response.text
+    assert response.json()["detail"] == code
 
 
-async def test_login_without_next_lands_on_the_default_redirect(client, admin_user, settings):
-    settings.default_redirect_url = "https://storage.clusterkeep.dev.net"
-
+async def test_password_change_requires_the_frontend_token(client, app, admin_user):
+    await _flag_for_change(app, admin_user)
+    token = (await sign_in(client)).json()["change_token"]
     response = await client.post(
-        "/login", data={"username": "alice", "password": ADMIN_PASSWORD}, follow_redirects=False
+        f"{SESSIONS}/password-change", json={"change_token": token, "password": "a-brand-new-passphrase"}
     )
-    assert response.headers["location"] == "https://storage.clusterkeep.dev.net"
+    assert response.status_code == 401
+
+
+async def test_login_page_redirects_to_the_clusterkeep_ui_sign_in_page(client, settings):
+    response = await client.get("/login", params={"next": "https://headlamp.clusterkeep.dev.net"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"{settings.login_page_url}?next=https%3A%2F%2Fheadlamp.clusterkeep.dev.net"
+    )
+
+
+async def test_login_page_sends_signed_in_users_straight_on(client, admin_user, settings):
+    client.cookies.set(settings.cookie_name, (await sign_in(client)).json()["session_token"])
+    response = await client.get(
+        "/login", params={"next": "https://headlamp.clusterkeep.dev.net"}, follow_redirects=False
+    )
+    assert response.headers["location"] == "https://headlamp.clusterkeep.dev.net"
+
+
+async def test_auth_api_no_longer_accepts_form_posts(client, admin_user):
+    response = await client.post("/login", data={"username": "alice", "password": ADMIN_PASSWORD})
+    assert response.status_code == 405

@@ -1,15 +1,11 @@
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
-from fastapi import APIRouter, Form, Request, Response, status
-from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Request, Response, status
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app import repository
-from app.deps import DbDep, OptionalSessionDep, PasswordsDep, RedisDep, SessionDep, SettingsDep
+from app.deps import OptionalSessionDep, RedisDep, SessionDep, SettingsDep
 
 router = APIRouter(tags=["login"])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
@@ -33,153 +29,28 @@ def _is_safe_redirect(target: str, settings: SettingsDep) -> bool:
 
 
 def _default_redirect(settings: SettingsDep) -> str:
-    return settings.default_redirect_url or f"{settings.issuer_url}/account"
+    if settings.default_redirect_url:
+        return settings.default_redirect_url
+    page = urlparse(settings.login_page_url)
+    return f"{page.scheme}://{page.netloc}/"
 
 
-MIN_PASSWORD_LENGTH = 12
+def safe_target(next_url: str, settings: SettingsDep) -> str:
+    return next_url if _is_safe_redirect(next_url, settings) else _default_redirect(settings)
 
 
-def _change_password_page(
-    request: Request, settings: SettingsDep, change_token: str, error: str | None, status_code: int = 200
-) -> Response:
-    return templates.TemplateResponse(
-        request,
-        "login.html",
-        {"environment": settings.environment, "error": error, "change_token": change_token},
-        status_code=status_code,
+def login_page_redirect(settings: SettingsDep, next_url: str) -> RedirectResponse:
+    return RedirectResponse(
+        f"{settings.login_page_url}?{urlencode({'next': next_url})}", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
-async def _start_session(redis: RedisDep, db: DbDep, user, target: str, settings: SettingsDep) -> Response:
-    user.last_login_at = datetime.now(timezone.utc)
-    await db.commit()
-
-    token, _ = await redis.create_session(
-        user_id=user.id, username=user.username, email=user.email, groups=user.groups
-    )
-    return _set_session_response(target, settings, token)
-
-
-def _set_session_response(target: str, settings: SettingsDep, token: str) -> Response:
-    response = RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
-    response.set_cookie(
-        settings.cookie_name,
-        token,
-        max_age=settings.session_absolute_seconds,
-        domain=settings.cookie_domain,
-        secure=settings.cookie_secure,
-        httponly=True,
-        samesite="lax",
-        path="/",
-    )
-    return response
-
-
-@router.get("/login", response_class=HTMLResponse)
-async def login_form(
-    request: Request, settings: SettingsDep, session: OptionalSessionDep, next: str = ""
-) -> Response:
-    target = next if _is_safe_redirect(next, settings) else _default_redirect(settings)
-
+@router.get("/login")
+async def login_form(settings: SettingsDep, session: OptionalSessionDep, next: str = "") -> Response:
+    target = safe_target(next, settings)
     if session is not None:
         return RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
-
-    return templates.TemplateResponse(
-        request,
-        "login.html",
-        {"next": target, "environment": settings.environment, "error": None},
-    )
-
-
-@router.post("/login")
-async def login_submit(
-    request: Request,
-    settings: SettingsDep,
-    db: DbDep,
-    redis: RedisDep,
-    passwords: PasswordsDep,
-    username: Annotated[str, Form()],
-    password: Annotated[str, Form()],
-    next: Annotated[str, Form()] = "",
-) -> Response:
-    target = next if _is_safe_redirect(next, settings) else _default_redirect(settings)
-
-    def rejected() -> Response:
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"next": target, "environment": settings.environment, "error": "Incorrect username or password."},
-            status_code=status.HTTP_401_UNAUTHORIZED,
-        )
-
-    if await redis.failed_login_count(username) >= settings.max_failed_logins:
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {
-                "next": target,
-                "environment": settings.environment,
-                "error": "Too many failed attempts. Try again later.",
-            },
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
-
-    user = await repository.get_user_by_username(db, username)
-
-    # Verify against the dummy hash even when the user is missing, so an unknown username takes the same time.
-    if user is None:
-        await run_in_threadpool(passwords.verify, request.app.state.dummy_password_hash, password)
-        await redis.register_failed_login(username)
-        return rejected()
-
-    if not await run_in_threadpool(passwords.verify, user.password_hash, password) or not user.is_active:
-        await redis.register_failed_login(username)
-        return rejected()
-
-    if passwords.needs_rehash(user.password_hash):
-        await repository.set_password(db, passwords, user, password)
-
-    await redis.clear_failed_logins(username)
-
-    if user.must_change_password:
-        change_token = await redis.store_password_change(user_id=user.id, next_url=target)
-        return _change_password_page(request, settings, change_token, None)
-
-    return await _start_session(redis, db, user, target, settings)
-
-
-@router.post("/login/change-password")
-async def change_password_submit(
-    request: Request,
-    settings: SettingsDep,
-    db: DbDep,
-    redis: RedisDep,
-    passwords: PasswordsDep,
-    change_token: Annotated[str, Form()],
-    password: Annotated[str, Form()],
-    password_repeat: Annotated[str, Form()],
-) -> Response:
-    pending = await redis.get_password_change(change_token)
-    user = None if pending is None else await repository.get_user_by_id(db, pending["user_id"])
-    if user is None or not user.is_active:
-        return RedirectResponse(f"{settings.issuer_url}/login", status_code=status.HTTP_303_SEE_OTHER)
-
-    def retry(error: str) -> Response:
-        return _change_password_page(request, settings, change_token, error, status.HTTP_400_BAD_REQUEST)
-
-    if password != password_repeat:
-        return retry("Passwords do not match.")
-    if len(password) < MIN_PASSWORD_LENGTH:
-        return retry(f"Use at least {MIN_PASSWORD_LENGTH} characters.")
-    if await run_in_threadpool(passwords.verify, user.password_hash, password):
-        return retry("Choose a password different from your current one.")
-
-    await repository.set_password(db, passwords, user, password)
-    await redis.delete_password_change(change_token)
-    await redis.delete_user_sessions(user.id)
-
-    target = pending["next"] if _is_safe_redirect(pending["next"], settings) else _default_redirect(settings)
-    return await _start_session(redis, db, user, target, settings)
+    return login_page_redirect(settings, target)
 
 
 @router.get("/logout")
@@ -195,7 +66,7 @@ async def logout(
     target = (
         post_logout_redirect_uri
         if _is_safe_redirect(post_logout_redirect_uri, settings)
-        else f"{settings.issuer_url}/login"
+        else settings.login_page_url
     )
     response = RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(settings.cookie_name, domain=settings.cookie_domain, path="/")
