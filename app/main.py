@@ -38,6 +38,20 @@ async def bootstrap(app: FastAPI, settings: Settings) -> None:
                 require_pkce=False,
             )
 
+        access_team = os.environ.get("AUTH_API_CLOUDFLARE_ACCESS_TEAM_DOMAIN", "")
+        access_secret = os.environ.get("AUTH_API_CLOUDFLARE_ACCESS_CLIENT_SECRET", "")
+        if access_team and access_secret:
+            await repository.upsert_client(
+                session,
+                app.state.passwords,
+                client_id="cloudflare-access",
+                name="Cloudflare Access",
+                redirect_uris=[f"https://{access_team}/cdn-cgi/access/callback"],
+                scopes=["openid", "profile", "email", "groups"],
+                client_secret=access_secret,
+                require_pkce=True,
+            )
+
         admin_user = os.environ.get("AUTH_API_BOOTSTRAP_USERNAME", "")
         admin_password = os.environ.get("AUTH_API_BOOTSTRAP_PASSWORD", "")
         if admin_user and admin_password:

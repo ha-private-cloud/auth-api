@@ -140,3 +140,9 @@ variable "allowed_redirect_hosts" {
   type        = string
   default     = ""
 }
+
+variable "cloudflare_access_team_domain" {
+  description = "Cloudflare Zero Trust team domain (e.g. royal-sun-738f.cloudflareaccess.com). Set to register the cloudflare-access OIDC client; blank disables it."
+  type        = string
+  default     = ""
+}
