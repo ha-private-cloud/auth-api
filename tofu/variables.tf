@@ -7,7 +7,7 @@ variable "kubeconfig_path" {
 variable "namespace" {
   description = "Namespace to install auth-api into. Must already exist."
   type        = string
-  default     = "clusterkeep-dev-priv"
+  default     = "auth-dev-pub"
 }
 
 variable "image_repository" {
