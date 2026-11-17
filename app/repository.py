@@ -1,10 +1,13 @@
 import base64
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+import secrets
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import OidcClient, ServiceCredential, SigningKey, User
+from app.cache import digest
+from app.models import Invite, OidcClient, ServiceCredential, SigningKey, User
 from app.security.keys import KeyMaterial
 from app.security.passwords import PasswordService
 
@@ -158,3 +161,57 @@ async def get_service_credential(session: AsyncSession, token_digest: str) -> Se
 async def revoke_service_credential(session: AsyncSession, credential: ServiceCredential) -> None:
     credential.revoked_at = datetime.now(timezone.utc)
     await session.commit()
+
+
+async def set_active(session: AsyncSession, user: User, active: bool) -> None:
+    user.is_active = active
+    if not active:
+        await session.execute(
+            update(ServiceCredential)
+            .where(ServiceCredential.user_id == user.id, ServiceCredential.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(timezone.utc))
+        )
+    await session.commit()
+
+
+async def create_invite(
+    session: AsyncSession, *, created_by: str | None, note: str | None, lifetime: timedelta
+) -> tuple[Invite, str]:
+    token = secrets.token_urlsafe(32)
+    invite = Invite(
+        token_digest=digest(token),
+        note=note,
+        created_by=created_by,
+        expires_at=datetime.now(timezone.utc) + lifetime,
+    )
+    session.add(invite)
+    await session.commit()
+    await session.refresh(invite)
+    return invite, token
+
+
+async def list_invites(session: AsyncSession) -> list[Invite]:
+    result = await session.execute(select(Invite).order_by(Invite.created_at.desc()))
+    return list(result.scalars())
+
+
+async def revoke_invite(session: AsyncSession, invite: Invite) -> None:
+    invite.revoked_at = datetime.now(timezone.utc)
+    await session.commit()
+
+
+async def claim_invite(session: AsyncSession, token: str) -> str | None:
+    """Marks an open invite used in the caller's transaction; None if it's unknown, used, revoked or expired."""
+    now = datetime.now(timezone.utc)
+    result = await session.execute(
+        update(Invite)
+        .where(
+            Invite.token_digest == digest(token),
+            Invite.used_at.is_(None),
+            Invite.revoked_at.is_(None),
+            Invite.expires_at > now,
+        )
+        .values(used_at=now)
+        .returning(Invite.id)
+    )
+    return result.scalar_one_or_none()

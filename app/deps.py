@@ -4,7 +4,8 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.cache import RedisStore, SsoSession
+from app import repository
+from app.cache import RedisStore, SsoSession, digest
 from app.config import Settings, get_settings
 from app.security.passwords import PasswordService
 from app.security.pqsign import InvalidServiceToken
@@ -51,22 +52,28 @@ SessionDep = Annotated[SsoSession, Depends(require_session)]
 
 async def require_service_token(
     tokens: TokensDep,
+    db: DbDep,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing bearer token",
-            headers={"WWW-Authenticate": "Bearer"},
+    def refuse(detail: str) -> HTTPException:
+        return HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=detail, headers={"WWW-Authenticate": "Bearer"}
         )
+
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise refuse("missing bearer token")
+    token = authorization.split(" ", 1)[1].strip()
     try:
-        return tokens.verify_service_token(authorization.split(" ", 1)[1].strip())
+        claims = tokens.verify_service_token(token)
     except InvalidServiceToken as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid service token",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise refuse("invalid service token") from exc
+    credential = await repository.get_service_credential(db, digest(token))
+    if credential is not None and credential.revoked_at is not None:
+        raise refuse("service token revoked")
+    user = await repository.get_user_by_id(db, str(claims.get("sub", "")))
+    if user is None or not user.is_active:
+        raise refuse("service token user is not active")
+    return claims
 
 
 ADMIN_GROUPS = ("cluster-admins", "admin")

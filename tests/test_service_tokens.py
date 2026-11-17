@@ -89,12 +89,12 @@ async def test_admin_endpoints_reject_a_non_admin_token(client, admin_user, app)
     async with app.state.sessionmaker() as session:
         from app import repository
 
-        await repository.create_user(
+        bob = await repository.create_user(
             session, app.state.passwords, username="bob", password="bobs-long-password", groups=["viewers"]
         )
 
     token = app.state.tokens.service_token(
-        subject="bob-id", username="bob", audience="auth-api", scopes=[], groups=["viewers"]
+        subject=bob.id, username="bob", audience="auth-api", scopes=[], groups=["viewers"]
     )
     response = await client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 403
@@ -177,8 +177,9 @@ async def test_updating_groups_for_an_unknown_user_returns_404(client, admin_use
 
 
 async def test_non_admin_cannot_update_groups(client, admin_user, app):
+    bob_id = await _bob(app)
     token = app.state.tokens.service_token(
-        subject="bob-id", username="bob", audience="auth-api", scopes=[], groups=["viewers"]
+        subject=bob_id, username="bob", audience="auth-api", scopes=[], groups=["viewers"]
     )
     response = await client.patch(
         f"/api/v1/users/{admin_user.id}/groups",
