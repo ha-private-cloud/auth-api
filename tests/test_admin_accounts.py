@@ -166,3 +166,21 @@ async def test_a_taken_username_does_not_use_up_the_invite(client, admin_user, a
     assert (await client.post("/api/v1/register", json=body, headers=REGISTRATION_HEADERS)).status_code == 409
     listed = (await client.get("/api/v1/invites", headers=bearer(admin_token(app, admin_user)))).json()
     assert listed[0]["status"] == "open"
+
+
+async def test_admins_cannot_create_a_user_with_an_email_in_use(client, admin_user, app):
+    response = await client.post(
+        "/api/v1/users",
+        json={"username": "bob", "password": "bob-long-password", "email": "ALICE@clusterkeep.dev.net"},
+        headers=bearer(admin_token(app, admin_user)),
+    )
+    assert response.status_code == 409
+
+
+async def test_admins_cannot_create_a_username_with_an_at_sign(client, admin_user, app):
+    response = await client.post(
+        "/api/v1/users",
+        json={"username": "bob@example.com", "password": "bob-long-password"},
+        headers=bearer(admin_token(app, admin_user)),
+    )
+    assert response.status_code == 422

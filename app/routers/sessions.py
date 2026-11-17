@@ -20,7 +20,7 @@ MIN_PASSWORD_LENGTH = 12
 
 
 class SignInRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
+    username: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=1024)
     next: str = Field(default="", max_length=4096)
 
@@ -69,27 +69,27 @@ async def sign_in(
     body: SignInRequest,
 ) -> JSONResponse:
     target = safe_target(body.next, settings)
-    username = body.username.strip().lower()
+    identifier = body.username.strip().lower()
+    user = await repository.get_user_for_sign_in(db, identifier)
+    lockout_key = user.id if user is not None else identifier
 
-    if await redis.failed_login_count(username) >= settings.max_failed_logins:
+    if await redis.failed_login_count(lockout_key) >= settings.max_failed_logins:
         return _error(status.HTTP_429_TOO_MANY_REQUESTS, "locked")
-
-    user = await repository.get_user_by_username(db, username)
 
     # Verify against the dummy hash even when the user is missing, so an unknown username takes the same time.
     if user is None:
         await run_in_threadpool(passwords.verify, request.app.state.dummy_password_hash, body.password)
-        await redis.register_failed_login(username)
+        await redis.register_failed_login(lockout_key)
         return _error(status.HTTP_401_UNAUTHORIZED, "invalid_credentials")
 
     if not await run_in_threadpool(passwords.verify, user.password_hash, body.password) or not user.is_active:
-        await redis.register_failed_login(username)
+        await redis.register_failed_login(lockout_key)
         return _error(status.HTTP_401_UNAUTHORIZED, "invalid_credentials")
 
     if passwords.needs_rehash(user.password_hash):
         await repository.set_password(db, passwords, user, body.password)
 
-    await redis.clear_failed_logins(username)
+    await redis.clear_failed_logins(lockout_key)
 
     if user.must_change_password:
         change_token = await redis.store_password_change(user_id=user.id, next_url=target)
