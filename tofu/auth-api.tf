@@ -32,11 +32,20 @@ data "external" "auth_api_latest_tag" {
   }
 }
 
+data "external" "auth_api_release_tag" {
+  count   = var.image_tag_prefix == "" && var.image_tag == "" ? 1 : 0
+  program = ["python3", "${path.module}/scripts/latest_release_tag.py"]
+
+  query = {
+    repo_dir = abspath("${path.module}/..")
+  }
+}
+
 locals {
   deployed_image_tag = (
-    var.image_tag_prefix != "" && data.external.auth_api_latest_tag.result.tag != ""
-    ? data.external.auth_api_latest_tag.result.tag
-    : var.image_tag
+    var.image_tag_prefix != ""
+    ? (data.external.auth_api_latest_tag.result.tag != "" ? data.external.auth_api_latest_tag.result.tag : var.image_tag)
+    : (var.image_tag != "" ? var.image_tag : data.external.auth_api_release_tag[0].result.tag)
   )
 }
 
