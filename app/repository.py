@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import secrets
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cache import digest
@@ -15,6 +15,28 @@ from app.security.passwords import PasswordService
 async def get_user_by_username(session: AsyncSession, username: str) -> User | None:
     result = await session.execute(select(User).where(User.username == username.lower()))
     return result.scalar_one_or_none()
+
+
+def normalize_email(email: str | None) -> str | None:
+    return email.strip().lower() if email and email.strip() else None
+
+
+async def get_users_by_email(session: AsyncSession, email: str) -> list[User]:
+    result = await session.execute(select(User).where(func.lower(User.email) == email.strip().lower()))
+    return list(result.scalars())
+
+
+async def email_in_use(session: AsyncSession, email: str | None) -> bool:
+    return bool(email) and bool(await get_users_by_email(session, email))
+
+
+async def get_user_for_sign_in(session: AsyncSession, identifier: str) -> User | None:
+    """Looks up by email when the identifier has an @, refusing an address shared by more than one account."""
+    if "@" in identifier:
+        matches = await get_users_by_email(session, identifier)
+        if matches:
+            return matches[0] if len(matches) == 1 else None
+    return await get_user_by_username(session, identifier)
 
 
 async def get_user_by_id(session: AsyncSession, user_id: str) -> User | None:
@@ -38,7 +60,7 @@ async def create_user(
 ) -> User:
     user = User(
         username=username.lower(),
-        email=email,
+        email=normalize_email(email),
         password_hash=passwords.hash(password),
         groups=groups or [],
         must_change_password=must_change_password,

@@ -57,9 +57,31 @@ async def test_repeated_failures_lock_the_account_out(client, admin_user, settin
 
 async def test_successful_sign_in_clears_the_failure_counter(client, admin_user, app):
     await sign_in(client, password="wrong-password")
-    assert await app.state.redis.failed_login_count("alice") == 1
+    assert await app.state.redis.failed_login_count(admin_user.id) == 1
     await sign_in(client)
-    assert await app.state.redis.failed_login_count("alice") == 0
+    assert await app.state.redis.failed_login_count(admin_user.id) == 0
+
+
+async def test_users_can_sign_in_with_their_email(client, admin_user):
+    response = await sign_in(client, username="  Alice@ClusterKeep.dev.net ")
+    assert response.status_code == 201
+
+
+async def test_username_and_email_share_one_lockout(client, admin_user, settings):
+    for attempt in range(settings.max_failed_logins):
+        identifier = "alice" if attempt % 2 else "alice@clusterkeep.dev.net"
+        await sign_in(client, username=identifier, password="wrong-password")
+    assert (await sign_in(client)).status_code == 429
+    assert (await sign_in(client, username="alice@clusterkeep.dev.net")).status_code == 429
+
+
+async def test_an_email_shared_by_two_accounts_cannot_be_used_to_sign_in(client, admin_user, app):
+    async with app.state.sessionmaker() as session:
+        await repository.create_user(
+            session, app.state.passwords, username="alice2", password=ADMIN_PASSWORD, email="ALICE@clusterkeep.dev.net"
+        )
+    assert (await sign_in(client, username="alice@clusterkeep.dev.net")).status_code == 401
+    assert (await sign_in(client, username="alice")).status_code == 201
 
 
 async def test_offsite_next_is_refused(client, admin_user, settings):

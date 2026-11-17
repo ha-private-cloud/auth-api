@@ -64,8 +64,12 @@ async def create(
     claims: Annotated[dict, Depends(require_admin)],
 ) -> UserOut:
     require_cluster_group_rights(claims, [], body.groups)
+    if "@" in body.username:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "usernames can't contain @")
     if await repository.get_user_by_username(db, body.username) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "username already exists")
+    if await repository.email_in_use(db, body.email):
+        raise HTTPException(status.HTTP_409_CONFLICT, "email already exists")
     user = await repository.create_user(
         db,
         passwords,
