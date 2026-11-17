@@ -70,6 +70,20 @@ class ServiceCredential(Base):
     user: Mapped[User] = relationship(back_populates="credentials")
 
 
+class Invite(Base):
+    __tablename__ = "invites"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    token_digest: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    note: Mapped[str | None] = mapped_column(String(255), default=None)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    used_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
 class SigningKey(Base):
     """Persisted so every replica signs with one key and restarts stay valid."""
 

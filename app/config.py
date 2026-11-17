@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     login_page_url: str = "https://dev.clusterkeep.dev.net/login"
 
     registration_token: str = ""
+    invite_days: int = 7
 
     @field_validator("issuer_url")
     @classmethod

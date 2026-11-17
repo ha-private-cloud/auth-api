@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 REGISTRATION_HEADERS = {"Authorization": "Bearer test-registration-token"}
 VALID_BODY = {"username": "newuser", "password": "a-long-enough-password", "email": "newuser@example.com"}
 
@@ -14,8 +16,18 @@ async def test_wrong_bearer_token_is_rejected(client):
     assert response.status_code == 401
 
 
-async def test_successful_registration_creates_an_active_unprivileged_user_and_sets_a_session(client, settings):
-    response = await client.post("/api/v1/register", json=VALID_BODY, headers=REGISTRATION_HEADERS)
+async def _invite(app):
+    from app import repository
+
+    async with app.state.sessionmaker() as session:
+        _, token = await repository.create_invite(session, created_by=None, note=None, lifetime=timedelta(days=1))
+    return token
+
+
+async def test_successful_registration_creates_an_active_unprivileged_user_and_sets_a_session(client, settings, app):
+    response = await client.post(
+        "/api/v1/register", json={**VALID_BODY, "invite": await _invite(app)}, headers=REGISTRATION_HEADERS
+    )
     assert response.status_code == 201
     assert settings.cookie_name in response.cookies
 
@@ -52,7 +64,7 @@ async def test_registration_rejects_a_malformed_email(client):
 async def test_registration_rejects_a_taken_username(client, admin_user):
     response = await client.post(
         "/api/v1/register",
-        json={**VALID_BODY, "username": "alice"},
+        json={**VALID_BODY, "username": "alice", "invite": "unused"},
         headers=REGISTRATION_HEADERS,
     )
     assert response.status_code == 409
