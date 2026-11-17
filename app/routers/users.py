@@ -36,6 +36,10 @@ class GroupsUpdate(BaseModel):
     groups: list[str]
 
 
+class ActiveUpdate(BaseModel):
+    is_active: bool
+
+
 def _to_out(user) -> UserOut:
     return UserOut(
         id=user.id,
@@ -116,3 +120,23 @@ async def revoke_sessions(
     if await repository.get_user_by_id(db, user_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such user")
     await redis.delete_user_sessions(user_id)
+
+
+@router.patch("/{user_id}/active", response_model=UserOut)
+async def set_active(
+    db: DbDep,
+    redis: RedisDep,
+    user_id: str,
+    body: ActiveUpdate,
+    claims: Annotated[dict, Depends(require_admin)],
+) -> UserOut:
+    if user_id == claims.get("sub"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "cannot change your own account's access")
+    user = await repository.get_user_by_id(db, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such user")
+    require_cluster_group_rights(claims, user.groups, [])
+    await repository.set_active(db, user, body.is_active)
+    if not body.is_active:
+        await redis.delete_user_sessions(user.id)
+    return _to_out(user)

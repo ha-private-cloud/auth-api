@@ -10,7 +10,7 @@ from app import repository
 from app.cache import RedisStore, build_client
 from app.config import Settings, get_settings
 from app.db import build_engine, build_sessionmaker, create_schema
-from app.routers import health, login, oidc, register, sessions, tokens, users
+from app.routers import health, invites, login, oidc, register, sessions, tokens, users
 from app.security.passwords import PasswordService
 from app.security.tokens import TokenService
 
@@ -120,6 +120,7 @@ def create_app() -> FastAPI:
     application.include_router(tokens.router)
     application.include_router(users.router)
     application.include_router(register.router)
+    application.include_router(invites.router)
     application.include_router(sessions.router)
     return application
 
