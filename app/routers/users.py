@@ -139,4 +139,5 @@ async def set_active(
     await repository.set_active(db, user, body.is_active)
     if not body.is_active:
         await redis.delete_user_sessions(user.id)
+        await redis.delete_user_refresh_tokens(user.id)
     return _to_out(user)

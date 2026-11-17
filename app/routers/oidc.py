@@ -190,6 +190,10 @@ async def token(
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unsupported grant_type {grant_type!r}")
 
+    user = await repository.get_user_by_id(db, grant["user_id"])
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "user is no longer active")
+
     id_token, access_token = await asyncio.gather(
         run_in_threadpool(
             tokens.id_token,
