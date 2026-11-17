@@ -6,6 +6,7 @@ from app.cache import RedisStore
 from app.config import Settings, get_settings
 from app.db import build_engine, build_sessionmaker, create_schema
 from app.main import create_app
+from app.security.keys import KeyMaterial
 from app.security.passwords import PasswordService
 from app.security.tokens import TokenService
 from tests.fakeredis import FakeRedis
@@ -42,8 +43,14 @@ def settings() -> Settings:
     )
 
 
+@pytest.fixture(scope="session")
+def signing_keys():
+    return KeyMaterial.generate()
+
+
 @pytest.fixture
-async def app(settings, monkeypatch):
+async def app(settings, signing_keys, monkeypatch):
+    monkeypatch.setattr(KeyMaterial, "generate", staticmethod(lambda: signing_keys))
     monkeypatch.setattr("app.main.get_settings", lambda: settings)
     monkeypatch.setattr("app.deps.get_settings", lambda: settings)
 
