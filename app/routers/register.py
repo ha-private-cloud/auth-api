@@ -1,7 +1,8 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 from app import repository
 from app.deps import DbDep, PasswordsDep, RedisDep, SettingsDep, require_registration_token
@@ -16,6 +17,13 @@ class SelfRegisterRequest(BaseModel):
     email: EmailStr
     invite: str = Field(min_length=1, max_length=128)
 
+    @field_validator("username")
+    @classmethod
+    def no_at_sign(cls, value: str) -> str:
+        if "@" in value:
+            raise PydanticCustomError("username_at", "Usernames can't contain @.")
+        return value
+
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def self_register(
@@ -27,13 +35,16 @@ async def self_register(
     _: Annotated[None, Depends(require_registration_token)],
 ) -> Response:
     username = body.username.strip().lower()
-    if await repository.get_user_by_username(db, username) is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "username already exists")
-
     invite_id = await repository.claim_invite(db, body.invite)
     if invite_id is None:
         await db.rollback()
         raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid_invite")
+    if await repository.get_user_by_username(db, username) is not None:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "username already exists")
+    if await repository.email_in_use(db, body.email):
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "email already exists")
     user = await repository.create_user(db, passwords, username=username, password=body.password, email=body.email)
     invite = await db.get(Invite, invite_id)
     invite.used_by = user.id

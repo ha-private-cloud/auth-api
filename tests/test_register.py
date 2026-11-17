@@ -61,10 +61,54 @@ async def test_registration_rejects_a_malformed_email(client):
     assert response.status_code == 422
 
 
-async def test_registration_rejects_a_taken_username(client, admin_user):
+async def _invite_status(app, invite):
+    from app import repository
+    from app.cache import digest
+    from app.models import Invite
+    from sqlalchemy import select
+
+    async with app.state.sessionmaker() as session:
+        row = (await session.execute(select(Invite).where(Invite.token_digest == digest(invite)))).scalar_one()
+    return row.used_at
+
+
+async def test_registration_rejects_a_taken_username_and_keeps_the_invite(client, admin_user, app):
+    invite = await _invite(app)
     response = await client.post(
         "/api/v1/register",
-        json={**VALID_BODY, "username": "alice", "invite": "unused"},
+        json={**VALID_BODY, "username": "alice", "invite": invite},
         headers=REGISTRATION_HEADERS,
     )
     assert response.status_code == 409
+    assert response.json()["detail"] == "username already exists"
+    assert await _invite_status(app, invite) is None
+
+
+async def test_registration_rejects_an_email_already_in_use_and_keeps_the_invite(client, admin_user, app):
+    invite = await _invite(app)
+    response = await client.post(
+        "/api/v1/register",
+        json={**VALID_BODY, "email": "Alice@ClusterKeep.dev.net", "invite": invite},
+        headers=REGISTRATION_HEADERS,
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "email already exists"
+    assert await _invite_status(app, invite) is None
+
+
+async def test_taken_usernames_and_emails_are_not_revealed_without_a_valid_invite(client, admin_user):
+    for body in ({"username": "alice"}, {"email": "alice@clusterkeep.dev.net"}):
+        response = await client.post(
+            "/api/v1/register", json={**VALID_BODY, **body, "invite": "made-up"}, headers=REGISTRATION_HEADERS
+        )
+        assert response.status_code == 403
+
+
+async def test_usernames_cannot_contain_an_at_sign(client, app):
+    response = await client.post(
+        "/api/v1/register",
+        json={**VALID_BODY, "username": "new@user", "invite": await _invite(app)},
+        headers=REGISTRATION_HEADERS,
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["msg"] == "Usernames can't contain @."
