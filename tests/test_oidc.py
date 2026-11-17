@@ -197,3 +197,61 @@ async def test_userinfo_requires_a_valid_service_token(client, admin_user, headl
     ok = await client.get("/userinfo", headers={"Authorization": f"Bearer {body['access_token']}"})
     assert ok.status_code == 200
     assert ok.json()["preferred_username"] == "alice"
+
+
+async def _refresh_token_for(client):
+    code = parse_qs(urlparse((await _authorize(client, scope="openid groups offline_access")).headers["location"]).query)["code"][0]
+    body = (await client.post("/token", data={
+        "grant_type": "authorization_code", "code": code,
+        "redirect_uri": "https://headlamp.clusterkeep.dev.net/oidc-callback",
+        "client_id": "headlamp", "client_secret": "headlamp-test-secret",
+    })).json()
+    return body["refresh_token"]
+
+
+async def _refresh(client, token):
+    return await client.post("/token", data={
+        "grant_type": "refresh_token", "refresh_token": token,
+        "client_id": "headlamp", "client_secret": "headlamp-test-secret",
+    })
+
+
+async def test_refresh_is_refused_once_the_user_is_disabled(client, admin_user, headlamp_client, app):
+    from app import repository
+
+    await login(client)
+    token = await _refresh_token_for(client)
+    async with app.state.sessionmaker() as session:
+        user = await repository.get_user_by_id(session, admin_user.id)
+        user.is_active = False
+        await session.commit()
+    assert (await _refresh(client, token)).status_code == 400
+
+
+async def test_disabling_a_user_deletes_their_refresh_tokens(client, admin_user, headlamp_client, app):
+    from app import repository
+    from tests.conftest import FRONTEND_HEADERS
+
+    async with app.state.sessionmaker() as session:
+        bob = await repository.create_user(
+            session, app.state.passwords, username="bob", password="bob-long-password", groups=["cluster-viewers"]
+        )
+    signed_in = await client.post(
+        "/api/v1/sessions", json={"username": "bob", "password": "bob-long-password"}, headers=FRONTEND_HEADERS
+    )
+    client.cookies.set("ck_sso", signed_in.json()["session_token"])
+    token = await _refresh_token_for(client)
+
+    admin = app.state.tokens.service_token(
+        subject=admin_user.id, username="alice", audience="auth-api", scopes=[], groups=["cluster-admins"]
+    )
+    await client.patch(f"/api/v1/users/{bob.id}/active", json={"is_active": False}, headers={"Authorization": f"Bearer {admin}"})
+    assert await app.state.redis.rotate_refresh_token(token) is None
+
+
+async def test_refresh_still_works_for_an_active_user(client, admin_user, headlamp_client):
+    await login(client)
+    token = await _refresh_token_for(client)
+    refreshed = await _refresh(client, token)
+    assert refreshed.status_code == 200
+    assert refreshed.json()["refresh_token"] != token

@@ -50,6 +50,9 @@ class RedisStore:
     def _user_sessions_key(self, user_id: str) -> str:
         return f"{self._ns}:user-sessions:{user_id}"
 
+    def _user_refresh_key(self, user_id: str) -> str:
+        return f"{self._ns}:user-refresh:{user_id}"
+
     async def ping(self) -> bool:
         try:
             return bool(await self._client.ping())
@@ -146,16 +149,33 @@ class RedisStore:
 
     async def store_refresh_token(self, payload: dict[str, Any]) -> str:
         token = new_opaque_token()
-        await self._client.set(
-            self._key("refresh", token),
-            json.dumps(payload),
-            ex=self._settings.refresh_token_seconds,
-        )
+        key = self._key("refresh", token)
+        index = self._user_refresh_key(payload["user_id"])
+        pipe = self._client.pipeline()
+        pipe.set(key, json.dumps(payload), ex=self._settings.refresh_token_seconds)
+        pipe.sadd(index, key)
+        pipe.expire(index, self._settings.refresh_token_seconds)
+        await pipe.execute()
         return token
 
     async def rotate_refresh_token(self, token: str) -> dict[str, Any] | None:
-        raw = await self._client.getdel(self._key("refresh", token))
-        return None if raw is None else json.loads(raw)
+        key = self._key("refresh", token)
+        raw = await self._client.getdel(key)
+        if raw is None:
+            return None
+        payload = json.loads(raw)
+        await self._client.srem(self._user_refresh_key(payload["user_id"]), key)
+        return payload
+
+    async def delete_user_refresh_tokens(self, user_id: str) -> int:
+        index = self._user_refresh_key(user_id)
+        keys = await self._client.smembers(index)
+        pipe = self._client.pipeline()
+        if keys:
+            pipe.delete(*keys)
+        pipe.delete(index)
+        await pipe.execute()
+        return len(keys)
 
     async def register_failed_login(self, username: str) -> int:
         key = f"{self._ns}:failed:{digest(username.lower())}"
